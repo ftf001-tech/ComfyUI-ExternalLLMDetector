@@ -1,8 +1,8 @@
 {
   "id": "755bc6aa-9492-462f-bd70-525021775aed",
   "revision": 0,
-  "last_node_id": 13,
-  "last_link_id": 14,
+  "last_node_id": 14,
+  "last_link_id": 18,
   "nodes": [
     {
       "id": 4,
@@ -22,7 +22,7 @@
         {
           "name": "bboxes_strings_list",
           "type": "LIST",
-          "link": 11
+          "link": 18
         }
       ],
       "outputs": [
@@ -73,7 +73,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            10
+            15
           ]
         },
         {
@@ -175,7 +175,7 @@
           "name": "ex_llm_settings",
           "type": "EX_LLM_SETTINGS",
           "links": [
-            9
+            16
           ]
         }
       ],
@@ -207,7 +207,7 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 12
+          "link": 17
         },
         {
           "name": "bboxes",
@@ -253,29 +253,31 @@
       "color": "rgba(27, 80, 119, 0.7)"
     },
     {
-      "id": 10,
+      "id": 14,
       "type": "ExternalLLMDetectorMainProcess",
       "pos": [
-        -245.71058654785156,
-        -673.8963012695312
+        -242.45550537109375,
+        -669.0449829101562
       ],
       "size": [
         400,
-        200
+        228
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": false
+      },
       "order": 2,
       "mode": 0,
       "inputs": [
         {
           "name": "ex_llm_settings",
           "type": "EX_LLM_SETTINGS",
-          "link": 9
+          "link": 16
         },
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 10
+          "link": 15
         }
       ],
       "outputs": [
@@ -283,14 +285,14 @@
           "name": "images",
           "type": "IMAGE",
           "links": [
-            12
+            17
           ]
         },
         {
           "name": "bboxes_strings_list",
           "type": "LIST",
           "links": [
-            11
+            18
           ]
         }
       ],
@@ -302,7 +304,9 @@
         1,
         1,
         "滑板",
-        "Locate the {objects} and output bbox in JSON.The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```"
+        "nothing",
+        3,
+        "Locate the {objects} and output bbox in JSON. And do not include {negative_objects}. The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```"
       ]
     }
   ],
@@ -324,36 +328,36 @@
       "IMAGE"
     ],
     [
-      9,
+      15,
+      8,
+      0,
+      14,
+      1,
+      "IMAGE"
+    ],
+    [
+      16,
       1,
       0,
-      10,
+      14,
       0,
       "EX_LLM_SETTINGS"
     ],
     [
-      10,
-      8,
-      0,
-      10,
-      1,
-      "IMAGE"
-    ],
-    [
-      11,
-      10,
-      1,
-      4,
-      0,
-      "LIST"
-    ],
-    [
-      12,
-      10,
+      17,
+      14,
       0,
       5,
       0,
       "IMAGE"
+    ],
+    [
+      18,
+      14,
+      1,
+      4,
+      0,
+      "LIST"
     ]
   ],
   "groups": [],
@@ -362,10 +366,10 @@
     "ue_links": [],
     "links_added_by_ue": [],
     "ds": {
-      "scale": 1.0152559799477163,
+      "scale": 1.0152559799477165,
       "offset": [
-        992.247377083479,
-        1041.1667290993141
+        927.7212677070178,
+        1040.6843808079475
       ]
     },
     "frontendVersion": "1.21.7",

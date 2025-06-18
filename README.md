@@ -14,7 +14,7 @@ This repository provides custom [ComfyUI](https://github.com/comfyanonymous/Comf
 Configures the connection settings for an external LLM API, including `base_url`, `model_id`, and `token`. The `token` parameter corresponds to the `api_key` in the OpenAI API client. This node's output is then passed to the `ExternalLLMDetectorMainProcess` node.
 
 ### `ExternalLLMDetectorMainProcess`
-The core node for sending images and prompts to the external LLM. It supports concurrent requests (`threads`) and custom delays (`delay`) in seconds between requests. It takes the `ex_llm_settings` from the `ExternalLLMDetectorSettings` node, an `images` input, a target `object` (for prompt placeholder replacement), and a fully customizable `prompt`.
+The core node for sending images and prompts to the external LLM. It supports concurrent requests (`threads`) and custom delays (`delay`) in seconds between requests. It takes the `ex_llm_settings` from the `ExternalLLMDetectorSettings` node, an `images` input, a target `objects`and `negative_objects` (for prompt placeholder replacement to determine what you want to split), a `retries`input to set the retry times for each request if it fails,and a fully customizable `prompt`.
 
 **Important Note:** The external LLM API **must be compatible with the OpenAI API format**, specifically its `chat.completions` endpoint. This means the `base_url` should point to an OpenAI-compatible server, and the `token` provided in `ExternalLLMDetectorSettings` will be used as the `api_key` for authentication.
 
@@ -41,7 +41,7 @@ Converts the raw JSON bounding box strings received from the `ExternalLLMDetecto
 ## Usage
 1.  Place this repository inside your `ComfyUI/custom_nodes` directory,then run `pip install -r requirements.txt`
 2.  Start by using the `ExternalLLMDetectorSettings` node. Provide your external LLM API's `base_url`, `model_id`, and `token` (API key). **Remember: your LLM API must be OpenAI-compatible.**
-3.  Connect the `ex_llm_settings` output to the `ExternalLLMDetectorMainProcess` node. Input your `images`, set the desired `threads` for concurrency, `delay` between requests, and specify the `object` you want to detect. Customize the `prompt` to guide the LLM on how to respond with bounding boxes in the required JSON format. Ensure your chosen LLM can handle multimodal inputs (image + text) and is capable of generating JSON responses in the specified `bbox_2d` format.
+3.  Connect the `ex_llm_settings` output to the `ExternalLLMDetectorMainProcess` node. Input your `images`, set the desired `threads` for concurrency, `delay` between requests and `retries`for retry times when a request fails, and specify the objects you want or not want to detect with the `objects` and `negative_objects`. Customize the `prompt` to guide the LLM on how to respond with bounding boxes in the required JSON format. Ensure your chosen LLM can handle multimodal inputs (image + text) and is capable of generating JSON responses in the specified `bbox_2d` format.
 4.  Connect the `bboxes_strings_list` output from `ExternalLLMDetectorMainProcess` to the `ExternalLLMDetectorBboxesConvert` node. This node will parse and convert the raw JSON strings into the `BBOXES` format expected by SAM2.
 5.  The `sam2_bboxes` output from `ExternalLLMDetectorBboxesConvert` should then be connected to any SAM2-compatible node for further processing (e.g., for segmentation).
 
@@ -57,7 +57,7 @@ Converts the raw JSON bounding box strings received from the `ExternalLLMDetecto
 配置外部 LLM API 的连接设置，包括 `base_url`（API 地址）、`model_id`（模型名称）和 `token`。`token` 参数对应于 OpenAI API 客户端中的 `api_key`。此节点的输出将传递给 `ExternalLLMDetectorMainProcess` 节点。
 
 ### `ExternalLLMDetectorMainProcess`
-向外部 LLM 发送图像和提示的核心节点。它支持并发请求（`threads`）和每次请求间的自定义延迟（`delay`），单位为秒。该节点接收来自 `ExternalLLMDetectorSettings` 的 `ex_llm_settings`，一个 `images` 输入，一个目标 `object`（用于替换提示中的占位符），以及一个完全可自定义的 `prompt`。
+向外部 LLM 发送图像和提示的核心节点。它支持并发请求（`threads`）和每次请求间的自定义延迟（`delay`），单位为秒。该节点接收来自 `ExternalLLMDetectorSettings` 的 `ex_llm_settings`，一个 `images` 输入，一个 `objects`和一个`negative_objects`（用于替换提示中的占位符以选定想要分割的内容），一个`retries`输入表示重试次数，以及一个完全可自定义的 `prompt`。
 
 **重要提示：** 外部 LLM API **必须与 OpenAI API 格式兼容**，特别是其 `chat.completions` 端点。这意味着 `base_url` 应指向一个与 OpenAI 兼容的服务器，并且在 `ExternalLLMDetectorSettings` 中提供的 `token` 将用作身份验证的 `api_key`。
 
@@ -85,6 +85,7 @@ Converts the raw JSON bounding box strings received from the `ExternalLLMDetecto
 ## 使用方法
 1.  将本仓库放置到您的 `ComfyUI/custom_nodes` 目录下。然后运行`pip install -r requirements.txt`
 2.  首先使用 `ExternalLLMDetectorSettings` 节点。提供您的外部 LLM API 的 `base_url`、`model_id` 和 `token`（API 密钥）。**请记住：您的 LLM API 必须与 OpenAI 兼容。**
-3.  将 `ex_llm_settings` 输出连接到 `ExternalLLMDetectorMainProcess` 节点。输入您的 `images`，设置所需的并发 `threads`，请求间的 `delay`（单位为秒），并指定您想要检测的 `object`。自定义 `prompt` 以引导 LLM 以所需的 JSON 格式返回边界框。请确保您选择的 LLM 能够处理多模态输入（图像 + 文本）并能够生成指定 `bbox_2d` 格式的 JSON 响应。
+3.  将 `ex_llm_settings` 输出连接到 `ExternalLLMDetectorMainProcess` 节点。输入您的 `images`，设置所需的并发 `threads`和重试次数`retries`，请求间的 `delay`，并通过`objects`和`negative_object`指定您想要或不想被检测到的物体 。自定义 `prompt` 以引导 LLM 以所需的 JSON 格式返回边界框。请确保您选择的 LLM 能够处理多模态输入（图像 + 文本）并能够生成指定 `bbox_2d` 格式的 JSON 响应。
 4.  将 `ExternalLLMDetectorMainProcess` 的 `bboxes_strings_list` 输出连接到 `ExternalLLMDetectorBboxesConvert` 节点。此节点将解析并将原始 JSON 字符串转换为 SAM2 期望的 `BBOXES` 格式。
 5.  `ExternalLLMDetectorBboxesConvert` 的 `sam2_bboxes` 输出随后可以连接到任何 SAM2 兼容的节点进行进一步处理（例如，用于分割）。
+```

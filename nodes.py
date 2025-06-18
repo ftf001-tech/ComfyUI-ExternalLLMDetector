@@ -78,9 +78,11 @@ class ExternalLLMDetectorMainProcess:
                 "threads": ("INT", {"default": 1, "min": 1, "max": 64, "step": 1}), # 请求的并发数
                 "delay": ("INT", {"default": 1, "min": 0, "max": 60, "step": 1}),   # 每次请求的延迟（秒）
                 "images": ("IMAGE",), # 标准的 ComfyUI 图片组输入
-                "object": ("STRING", {"default": "human", "multiline": False}), # 用于替换prompt中的内容
+                "objects": ("STRING", {"default": "human", "multiline": False}), # 用于替换prompt中的内容
+                "negative_objects": ("STRING", {"default": "nothing", "multiline": False}), # 用于替换prompt中的内容
+                "retries": ("INT", {"default": 3, "min": 0, "max": 10, "step": 1}), # LLM请求失败后的重试次数
                 "prompt": ("STRING", {
-                    "default": "Locate the {objects} and output bbox in JSON.The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```",
+                    "default": "Locate the {objects} and output bbox in JSON. And do not include {negative_objects}. The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```",
                     "multiline": True # 用户prompt，可多行输入
                 }),
             }
@@ -89,7 +91,7 @@ class ExternalLLMDetectorMainProcess:
     RETURN_NAMES = ("images", "bboxes_strings_list") # 定义输出端口的名称
     FUNCTION = "process_llm_requests" # 节点执行时调用的函数
     CATEGORY = "ExternalLLM" # 节点在ComfyUI UI中显示的类别
-    def process_llm_requests(self, ex_llm_settings: tuple, threads: int, delay: int, images: torch.Tensor, object: str, prompt: str):
+    def process_llm_requests(self, ex_llm_settings: tuple, threads: int, delay: int, images: torch.Tensor, objects: str, negative_objects: str, prompt: str, retries: int):
         """
         解包LLM设置，并发对LLM发起请求，并按顺序收集结果。
         """
@@ -107,12 +109,13 @@ class ExternalLLMDetectorMainProcess:
         tasks = []
         for i in range(images.shape[0]):
             # 替换prompt中的占位符
-            filled_prompt = prompt.replace("{objects}", object)
+            filled_prompt = prompt.replace("{objects}", objects)
+            filled_prompt = filled_prompt.replace("{negative_objects}", negative_objects)
             tasks.append((i, filled_prompt, images[i])) # (图像索引, 完整的prompt, 单张图片张量)
         # 使用ThreadPoolExecutor进行并发请求
         with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
             # 提交任务并存储future对象及其对应的原始图像索引
-            futures = {executor.submit(self._call_llm_api, client, model_id, delay, task[1], task[2]): task[0] for task in tasks}
+            futures = {executor.submit(self._call_llm_api, client, model_id, delay, retries, task[1], task[2]): task[0] for task in tasks}
             # 遍历已完成的future，并按原始顺序收集结果
             for future in concurrent.futures.as_completed(futures):
                 original_index = futures[future] # 获取原始图像的索引
@@ -129,7 +132,7 @@ class ExternalLLMDetectorMainProcess:
         print(f"[ExternalLLMDetectorMainProcess] 所有LLM请求处理完毕。")
         # 原封不动地返回原始图片，并返回LLM结果字符串列表
         return (images, bboxes_strings_list)
-    def _call_llm_api(self, client: openai.OpenAI, model_id: str, delay: int, prompt_text: str, image_tensor: torch.Tensor) -> str:
+    def _call_llm_api(self, client: openai.OpenAI, model_id: str, delay: int, retries: int, prompt_text: str, image_tensor: torch.Tensor) -> str:
         """
         私有辅助方法：调用LLM API并处理响应。
         将图像张量转换为Base64编码的字符串，并将其与文本提示一起发送。
@@ -151,17 +154,33 @@ class ExternalLLMDetectorMainProcess:
             {"type": "text", "text": prompt_text},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
         ]
-        chat_completion = client.chat.completions.create(
-            model=model_id,
-            messages=[
-                {"role": "user", "content": messages_content} # 包含文本和图像内容
-            ],
-            # 关键：要求LLM返回JSON格式
-            response_format={"type": "json_object"}
-        )
-        # 提取LLM的响应内容
-        response_content = chat_completion.choices[0].message.content
-        return response_content
+        for attempt in range(retries + 1):
+            try:
+                chat_completion = client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {"role": "user", "content": messages_content} # 包含文本和图像内容
+                    ],
+                    # 关键：要求LLM返回JSON格式
+                    response_format={"type": "json_object"}
+                )
+                # 提取LLM的响应内容
+                response_content = chat_completion.choices[0].message.content
+                return response_content
+            except openai.OpenAIError as e:
+                if attempt < retries:
+                    print(f"[ExternalLLMDetectorMainProcess] LLM请求失败 (尝试 {attempt + 1}/{retries + 1}): {e}. 正在重试...")
+                    time.sleep(1) # 简单的重试延迟
+                else:
+                    print(f"[ExternalLLMDetectorMainProcess] LLM请求在 {retries + 1} 次尝试后仍然失败: {e}. 返回空内容。")
+                    return "" # 最后一次尝试失败，返回空内容
+            except Exception as e:
+                if attempt < retries:
+                    print(f"[ExternalLLMDetectorMainProcess] LLM请求失败 (尝试 {attempt + 1}/{retries + 1}, 未知错误): {e}. 正在重试...")
+                    time.sleep(1) # 简单的重试延迟
+                else:
+                    print(f"[ExternalLLMDetectorMainProcess] LLM请求在 {retries + 1} 次尝试后仍然失败 (未知错误): {e}. 返回空内容。")
+                    return "" # 最后一次尝试失败，返回空内容
 
 
 # --------------------------------------------------------------------------------
@@ -266,4 +285,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ExternalLLMDetectorMainProcess": "ExternalLLMDetectorMainProcess",
     "ExternalLLMDetectorBboxesConvert": "ExternalLLMDetectorBboxesConvert",
 }
-
