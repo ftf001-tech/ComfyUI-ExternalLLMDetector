@@ -88,4 +88,3 @@ Converts the raw JSON bounding box strings received from the `ExternalLLMDetecto
 3.  将 `ex_llm_settings` 输出连接到 `ExternalLLMDetectorMainProcess` 节点。输入您的 `images`，设置所需的并发 `threads`，请求间的 `delay`，并指定您想要检测的 `object`。自定义 `prompt` 以引导 LLM 以所需的 JSON 格式返回边界框。请确保您选择的 LLM 能够处理多模态输入（图像 + 文本）并能够生成指定 `bbox_2d` 格式的 JSON 响应。
 4.  将 `ExternalLLMDetectorMainProcess` 的 `bboxes_strings_list` 输出连接到 `ExternalLLMDetectorBboxesConvert` 节点。此节点将解析并将原始 JSON 字符串转换为 SAM2 期望的 `BBOXES` 格式。
 5.  `ExternalLLMDetectorBboxesConvert` 的 `sam2_bboxes` 输出随后可以连接到任何 SAM2 兼容的节点进行进一步处理（例如，用于分割）。
-```
