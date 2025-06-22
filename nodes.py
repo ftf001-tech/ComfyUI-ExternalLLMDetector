@@ -7,6 +7,7 @@ import torch # 用于处理ComfyUI的IMAGE类型，虽然这里只是传递
 from PIL import Image
 import io
 import base64
+import re # Added for robust regex parsing of LLM output
 
 # 定义一个自定义的类型，用于在节点之间传递配置信息
 # 将 EX_LLM_SETTINGS 直接定义为一个字符串
@@ -14,6 +15,60 @@ EX_LLM_SETTINGS = "EX_LLM_SETTINGS"
 # ComfyUI的BBOXES类型是预定义的，用于表示边界框列表
 # ComfyUI的LIST类型是预定义的，用于表示Python列表
 
+DEFAULT_PROMPT = '''## Role
+You are a well-trained picture detector.Your task is to find the exact set of coordinates in the picture as required and return their locations in the form of coordinates,the detailed task steps is below,you MUST follow all the steps and give the right form as required.Remember:You don't get a second chance to correct the error, you have to output the correct content that fits the format all at once!
+
+## Step 1:Analysis the prompt and separate them.
+
+the user's postive prompt is "{objects}"
+the user's negative prompt is "{negative_objects}"
+
+You MUST analysis ALL the objects in both postive prompt and negative prompt.Extraction of information on all objects.  YOU MUST filter ALL the objects AND NEVER DISMISS ANY OBEJECT
+
+Here are some examples,you must follow them:
+
+"太阳和月亮" => “太阳,月亮”
+"wood and grass"=> "wood,grass" 
+"bread,apple" => "bread,apple" 
+"苹果,梨" =>"苹果,梨"
+
+Then store them into {{objects_list}} and {{negative_objects_list}}
+
+## Step 2:Get the bboxes
+Bboxes or bounding boxes is a kind of way to locate object in the image,the detect result should be like that:
+"bbox_2d": [x1, y1, x2, y2]
+Now,you need to detect all objects in {{objects_list}},and return the bbox_2d items,if there is only one object in {{objects_list}}, just store the result to {{bbox_result}},if there are two or more objects in {{objects_list}},store the result as the order,like:{{bbox_result0}},{{bbox_result1}},{{bbox_result2}}...
+
+You need to obey every rules in the finding process as below:
+1.Principles of exclusion
+YOU MUST NOT include any objects when detecting objects in {{negative_objects_list}},not even one pixel.
+2.Principles of minimisation
+You MUST to get the minimum range in which the target can be detected in its entirety, and you HAVE TO make sure that there are no defects on the objects and they can't overlap each other., which are strictly forbidden.
+3.Principle of non-omission
+UNLESS there is more than a 98% probability of being sure that the object will not be found, YOU MUST find ALL the objects to be found and return their bbox values exactly as required
+
+## Step 3:Formatted output
+The format of output MUST be followed extremely, extremely strictly JSON.
+
+If there is only one object {{objects_list}},just output:
+```json
+[
+{{{bbox_result}}, "label": "{{objects_list[0]}}"}
+]
+```
+If there are many results,just output:
+```json
+[
+{{{bbox_result0}}, "label": "{{objects_list[0]}}"},
+{{{bbox_result1}}, "label": "{{objects_list[1]}}"},
+...
+]
+```
+Objects must be arranged sequentially in order from top to bottom, left to right.
+
+You MUST NOT make any adjustments to the output format, and you MUST replace the corresponding ‘{{}}’ element, you must output the JSON file directly, and you ARE NOT allowed to add any other content.
+
+'''
 
 # --------------------------------------------------------------------------------
 # ExternalLLMDetectorSettings 节点
@@ -82,7 +137,7 @@ class ExternalLLMDetectorMainProcess:
                 "negative_objects": ("STRING", {"default": "nothing", "multiline": False}), # 用于替换prompt中的内容
                 "retries": ("INT", {"default": 3, "min": 0, "max": 10, "step": 1}), # LLM请求失败后的重试次数
                 "prompt": ("STRING", {
-                    "default": "Locate the {objects} and output bbox in JSON. And do not include {negative_objects}. The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```",
+                    "default": DEFAULT_PROMPT,
                     "multiline": True # 用户prompt，可多行输入
                 }),
             }
@@ -160,9 +215,7 @@ class ExternalLLMDetectorMainProcess:
                     model=model_id,
                     messages=[
                         {"role": "user", "content": messages_content} # 包含文本和图像内容
-                    ],
-                    # 关键：要求LLM返回JSON格式
-                    response_format={"type": "json_object"}
+                    ]
                 )
                 # 提取LLM的响应内容
                 response_content = chat_completion.choices[0].message.content
@@ -222,50 +275,129 @@ class ExternalLLMDetectorBboxesConvert:
         ]
         """
         sam2_bboxes_output = [] # 最终的SAM2格式边界框列表
+        print(f"[ExternalLLMDetectorBboxesConvert] 开始处理LLM回应的bbox字符串，原始字符串: {bboxes_strings_list}")
         for i, bbox_str in enumerate(bboxes_strings_list):
             current_image_bboxes = [] # 当前图像的边界框列表
             if not bbox_str:
                 print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 的bbox字符串为空或None，跳过。")
                 sam2_bboxes_output.append([]) # 为当前图像添加空列表
                 continue
-            try:
-                # 尝试解析JSON字符串
-                parsed_json = json.loads(bbox_str)
-                # 根据JSON解析结果的类型进行处理
-                bbox_data_list = []
-                if isinstance(parsed_json, list):
-                    # 如果是列表，直接使用它
-                    bbox_data_list = parsed_json
-                elif isinstance(parsed_json, dict):
-                    # 如果是单个字典，将其包装成一个包含该字典的列表
-                    print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 的JSON解析结果是单个字典，将其视为包含一个边界框的列表。")
-                    bbox_data_list = [parsed_json]
-                else:
-                    # 如果既不是列表也不是字典，则视为无效格式
-                    print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 的JSON解析结果既不是列表也不是字典，跳过。原始字符串: {bbox_str}")
-                    sam2_bboxes_output.append([])
-                    continue # 跳过当前图像的处理，进入下一张
-                # 遍历处理每个边界框对象（无论是原始列表还是包装后的列表）
-                for item in bbox_data_list:
-                    # 检查是否包含"bbox_2d"键且其值为包含4个数字的列表
-                    if isinstance(item, dict) and "bbox_2d" in item and \
-                       isinstance(item["bbox_2d"], list) and \
-                       len(item["bbox_2d"]) == 4 and \
-                       all(isinstance(coord, (int, float)) for coord in item["bbox_2d"]):
-                        # 将坐标转换为整数（ComfyUI的BBOXES通常期望整数）
-                        bbox = [int(coord) for coord in item["bbox_2d"]]
-                        current_image_bboxes.append(bbox)
+
+            # --- ROBUST PARSING LOGIC ---
+            extracted_bboxes_from_regex = []
+            # Regex to find all occurrences of "bbox_2d": [x, y, w, h]
+            # This regex is designed to be robust to whitespace and capture the four integer coordinates.
+            bbox_regex = r'"bbox_2d"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]'
+            matches = re.findall(bbox_regex, bbox_str)
+
+            for match in matches:
+                try:
+                    # Convert captured strings to integers
+                    bbox = [int(coord) for coord in match]
+                    extracted_bboxes_from_regex.append(bbox)
+                except ValueError:
+                    print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 的bbox regex匹配到非整数坐标。跳过该项。匹配: {match}")
+
+            if extracted_bboxes_from_regex:
+                print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 成功通过正则表达式提取到边界框。")
+                current_image_bboxes.extend(extracted_bboxes_from_regex)
+            else:
+                # Fallback to JSON parsing if regex didn't find anything or failed
+                try:
+                    parsed_json = json.loads(bbox_str)
+
+                    # Existing logic for handling parsed_json
+                    final_bbox_items = []
+
+                    # Prioritize handling the problematic nested format: {'bbox_2d': [{'bbox_2d': [coords], 'label': '...'}, ...]}
+                    if isinstance(parsed_json, dict) and "bbox_2d" in parsed_json and \
+                       isinstance(parsed_json["bbox_2d"], list) and \
+                       len(parsed_json["bbox_2d"]) > 0 and \
+                       isinstance(parsed_json["bbox_2d"][0], dict) and \
+                       "bbox_2d" in parsed_json["bbox_2d"][0]:
+                        print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 的JSON解析结果是包含嵌套bbox字典列表的字典，正在提取嵌套列表。")
+                        final_bbox_items = parsed_json["bbox_2d"]
+                    elif isinstance(parsed_json, list):
+                        # Case 1: LLM returned a list of bbox dictionaries directly
+                        final_bbox_items = parsed_json
+                    elif isinstance(parsed_json, dict):
+                        # Check for {'bbox_2d': [list of coordinates]} format
+                        if "bbox_2d" in parsed_json and \
+                             isinstance(parsed_json["bbox_2d"], list) and \
+                             len(parsed_json["bbox_2d"]) > 0 and \
+                             isinstance(parsed_json["bbox_2d"][0], list) and \
+                             len(parsed_json["bbox_2d"][0]) == 4 and \
+                             all(isinstance(coord, (int, float)) for coord in parsed_json["bbox_2d"][0]):
+                            print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 的JSON解析结果是包含嵌套坐标列表的字典，正在转换为bbox字典列表。")
+                            final_bbox_items = [{"bbox_2d": coords} for coords in parsed_json["bbox_2d"]]
+                        # Check for single bbox dictionary format (e.g., LLM returns a single bbox dict, not a list)
+                        elif "bbox_2d" in parsed_json and \
+                             isinstance(parsed_json["bbox_2d"], list) and \
+                             len(parsed_json["bbox_2d"]) == 4 and \
+                             all(isinstance(coord, (int, float)) for coord in parsed_json["bbox_2d"]):
+                            print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 的JSON解析结果是单个边界框字典，将其视为包含一个边界框的列表。")
+                            final_bbox_items = [parsed_json]
+                        else:
+                            # Unrecognized dictionary format, or empty list
+                            print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 的JSON解析结果是无法识别的字典格式，跳过。数据: {parsed_json}")
+                            sam2_bboxes_output.append([])
+                            continue
                     else:
-                        print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 中发现无效的bbox格式或缺少'bbox_2d'键。跳过该项。数据: {item}")
-            except json.JSONDecodeError as e:
-                print(f"[ExternalLLMDetectorBboxesConvert] 错误: 图像 {i} 的JSON字符串解析失败。错误: {e}。原始字符串: {bbox_str}")
-                # 解析失败时，为当前图像添加空列表
-                current_image_bboxes = []
-            except Exception as e:
-                print(f"[ExternalLLMDetectorBboxesConvert] 错误: 处理图像 {i} 的bbox时发生未知错误。错误: {e}。原始字符串: {bbox_str}")
-                current_image_bboxes = []
+                        # Invalid top-level format
+                        print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 的JSON解析结果既不是列表也不是字典，跳过。原始字符串: {bbox_str}")
+                        sam2_bboxes_output.append([])
+                        continue
+
+                    # Now, iterate through final_bbox_items, which should always be a list of bbox dictionaries
+                    for item in final_bbox_items:
+                        # Check if it contains "bbox_2d" key and its value is a list of 4 numbers
+                        if isinstance(item, dict) and "bbox_2d" in item and \
+                           isinstance(item["bbox_2d"], list) and \
+                           len(item["bbox_2d"]) == 4 and \
+                           all(isinstance(coord, (int, float)) for coord in item["bbox_2d"]):
+                            # Convert coordinates to integers (ComfyUI's BBOXES usually expects integers)
+                            bbox = [int(coord) for coord in item["bbox_2d"]]
+                            current_image_bboxes.append(bbox)
+                        else:
+                            print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 中发现无效的bbox格式或缺少'bbox_2d'键。跳过该项。数据: {item}")
+
+                except json.JSONDecodeError:
+                    # If direct JSON parsing fails, and regex also failed, try the old "wrap in []" logic
+                    if bbox_str.strip().startswith('{') and '},{' in bbox_str:
+                        try:
+                            parsed_json = json.loads(f"[{bbox_str.strip()}]")
+                            print(f"[ExternalLLMDetectorBboxesConvert] 提示: 图像 {i} 的JSON字符串被识别为多个对象，已尝试添加外部列表括号并成功解析。")
+                            # Process the newly parsed_json (which should be a list)
+                            if isinstance(parsed_json, list):
+                                for item in parsed_json:
+                                    if isinstance(item, dict) and "bbox_2d" in item and \
+                                       isinstance(item["bbox_2d"], list) and \
+                                       len(item["bbox_2d"]) == 4 and \
+                                       all(isinstance(coord, (int, float)) for coord in item["bbox_2d"]):
+                                        bbox = [int(coord) for coord in item["bbox_2d"]]
+                                        current_image_bboxes.append(bbox)
+                                    else:
+                                        print(f"[ExternalLLMDetectorBboxesConvert] 警告: 图像 {i} 中发现无效的bbox格式或缺少'bbox_2d'键在重试解析后。跳过该项。数据: {item}")
+                            else:
+                                print(f"[ExternalLLMDetectorBboxesConvert] 错误: 图像 {i} 的JSON字符串尝试添加外部列表括号后解析结果不是列表。原始字符串: {bbox_str}")
+                                sam2_bboxes_output.append([])
+                                continue
+                        except json.JSONDecodeError as e_retry:
+                            print(f"[ExternalLLMDetectorBboxesConvert] 错误: 图像 {i} 的JSON字符串尝试添加外部列表括号后仍解析失败。错误: {e_retry}。原始字符串: {bbox_str}")
+                            sam2_bboxes_output.append([])
+                            continue
+                    else:
+                        print(f"[ExternalLLMDetectorBboxesConvert] 错误: 图像 {i} 的JSON字符串解析失败。原始字符串: {bbox_str}")
+                        sam2_bboxes_output.append([])
+                        continue
+                except Exception as e:
+                    print(f"[ExternalLLMDetectorBboxesConvert] 错误: 处理图像 {i} 的bbox时发生未知错误。错误: {e}。原始字符串: {bbox_str}")
+                    sam2_bboxes_output.append([])
+                    continue
+
             sam2_bboxes_output.append(current_image_bboxes)
         print(f"[ExternalLLMDetectorBboxesConvert] Bboxes已转换为SAM2格式。处理了 {len(sam2_bboxes_output)} 张图片。")
+        print(f'[ExternalLLMDetectorBboxesConvert] 处理后的Bboxes为：{sam2_bboxes_output,}')
         return (sam2_bboxes_output,)
 
 

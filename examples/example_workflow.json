@@ -1,8 +1,8 @@
 {
   "id": "755bc6aa-9492-462f-bd70-525021775aed",
   "revision": 0,
-  "last_node_id": 14,
-  "last_link_id": 18,
+  "last_node_id": 15,
+  "last_link_id": 21,
   "nodes": [
     {
       "id": 4,
@@ -30,7 +30,7 @@
           "name": "sam2_bboxes",
           "type": "BBOXES",
           "links": [
-            3
+            20
           ]
         }
       ],
@@ -143,7 +143,7 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 6
+          "link": 21
         }
       ],
       "outputs": [],
@@ -190,69 +190,6 @@
       ]
     },
     {
-      "id": 5,
-      "type": "LayerMask: SAM2Ultra",
-      "pos": [
-        512.3017578125,
-        -678.4780883789062
-      ],
-      "size": [
-        270,
-        366
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 17
-        },
-        {
-          "name": "bboxes",
-          "type": "BBOXES",
-          "link": 3
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            6
-          ]
-        },
-        {
-          "name": "mask",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI_LayerStyle_Advance",
-        "ver": "0f9184100e626e3202568a7cf890b3b92685a168",
-        "Node name for S&R": "LayerMask: SAM2Ultra",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "sam2_hiera_base_plus.safetensors",
-        "fp16",
-        "all",
-        "0,",
-        false,
-        "VITMatte",
-        6,
-        4,
-        0.15,
-        0.99,
-        true,
-        "cuda",
-        2
-      ],
-      "color": "rgba(27, 80, 119, 0.7)"
-    },
-    {
       "id": 14,
       "type": "ExternalLLMDetectorMainProcess",
       "pos": [
@@ -285,7 +222,7 @@
           "name": "images",
           "type": "IMAGE",
           "links": [
-            17
+            19
           ]
         },
         {
@@ -297,8 +234,8 @@
         }
       ],
       "properties": {
-        "widget_ue_connectable": {},
-        "Node name for S&R": "ExternalLLMDetectorMainProcess"
+        "Node name for S&R": "ExternalLLMDetectorMainProcess",
+        "widget_ue_connectable": {}
       },
       "widgets_values": [
         1,
@@ -308,25 +245,85 @@
         3,
         "Locate the {objects} and output bbox in JSON. And do not include {negative_objects}. The format must looks like:\n```json\n[\n{\"bbox_2d\": [123, 456, 789, 012], \"label\": \"target_object\"}\n]\n```"
       ]
+    },
+    {
+      "id": 15,
+      "type": "LayerMask: SAM2VideoUltra",
+      "pos": [
+        462.0760192871094,
+        -678.2140502929688
+      ],
+      "size": [
+        329.3619079589844,
+        406
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 19
+        },
+        {
+          "name": "bboxes",
+          "shape": 7,
+          "type": "BBOXES",
+          "link": 20
+        },
+        {
+          "name": "first_frame_mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        },
+        {
+          "name": "pre_mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "name": "preview",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_LayerStyle_Advance",
+        "ver": "0f9184100e626e3202568a7cf890b3b92685a168",
+        "Node name for S&R": "LayerMask: SAM2VideoUltra",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "sam2_hiera_base_plus.safetensors",
+        "fp16",
+        false,
+        false,
+        "#FF0080",
+        "VITMatte",
+        6,
+        4,
+        0.15,
+        0.99,
+        true,
+        "cuda",
+        4
+      ],
+      "color": "rgba(27, 80, 119, 0.7)"
     }
   ],
   "links": [
-    [
-      3,
-      4,
-      0,
-      5,
-      1,
-      "BBOXES"
-    ],
-    [
-      6,
-      5,
-      0,
-      7,
-      0,
-      "IMAGE"
-    ],
     [
       15,
       8,
@@ -344,20 +341,36 @@
       "EX_LLM_SETTINGS"
     ],
     [
-      17,
-      14,
-      0,
-      5,
-      0,
-      "IMAGE"
-    ],
-    [
       18,
       14,
       1,
       4,
       0,
       "LIST"
+    ],
+    [
+      19,
+      14,
+      0,
+      15,
+      0,
+      "IMAGE"
+    ],
+    [
+      20,
+      4,
+      0,
+      15,
+      1,
+      "BBOXES"
+    ],
+    [
+      21,
+      15,
+      1,
+      7,
+      0,
+      "IMAGE"
     ]
   ],
   "groups": [],
@@ -368,8 +381,8 @@
     "ds": {
       "scale": 1.0152559799477165,
       "offset": [
-        927.7212677070178,
-        1040.6843808079475
+        672.6131914036031,
+        901.8031500790617
       ]
     },
     "frontendVersion": "1.21.7",
